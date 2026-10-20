@@ -1,0 +1,4 @@
+site = "https://example.com/"
+state_dir = "../.state/demo"
+content_root = "content"
+allowed_hosts = ["example.com"]

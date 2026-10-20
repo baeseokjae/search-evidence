@@ -1,0 +1,15 @@
+site = "https://example.com/"
+state_dir = "~/.local/state/search-evidence"
+# Omit google_credentials to use Application Default Credentials.
+google_credentials = "~/.config/search-evidence/google.json"
+bing_key = "~/.config/search-evidence/bing-key.txt"
+# Optional local review inputs:
+# content_root = "/absolute/path/to/content/posts"
+# build_root = "/absolute/path/to/reviewed-build"
+allowed_hosts = ["example.com"]
+body_selector = ".post-content, main, article"
+max_calls = 200
+max_seconds = 180
+max_bytes = 4194304
+inspection_daily_limit = 20
+inspection_run_limit = 6
