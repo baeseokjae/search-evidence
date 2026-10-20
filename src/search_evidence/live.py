@@ -8,6 +8,7 @@ import json
 import re
 import socket
 import ssl
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -19,6 +20,31 @@ from .config import Profile
 from .core import EvidenceError, digest, in_property, now
 from .providers import Budget
 from .store import Store
+
+
+def public_unicast(ip: str) -> bool:
+    address = ipaddress.ip_address(ip)
+    if (
+        not address.is_global
+        or address.is_multicast
+        or address.is_reserved
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_unspecified
+    ):
+        return False
+    if isinstance(address, ipaddress.IPv6Address):
+        # A globally classified translation address can still reach a private
+        # IPv4 destination on a host with the corresponding routing support.
+        if address.ipv4_mapped is not None:
+            return public_unicast(str(address.ipv4_mapped))
+        if address.sixtofour is not None or address.teredo is not None:
+            return False
+        if address in ipaddress.IPv6Network("64:ff9b::/96"):
+            return False
+        if address in ipaddress.IPv6Network("64:ff9b:1::/48"):
+            return False
+    return True
 
 
 def resolve_public(url: str, allowed_hosts: tuple[str, ...], resolver=socket.getaddrinfo):
@@ -37,7 +63,7 @@ def resolve_public(url: str, allowed_hosts: tuple[str, ...], resolver=socket.get
         port = parts.port or (443 if parts.scheme == "https" else 80)
         addresses = resolver(parts.hostname, port, type=socket.SOCK_STREAM)
         ips = list(dict.fromkeys(a[4][0] for a in addresses))
-        if not ips or any(not ipaddress.ip_address(ip).is_global for ip in ips):
+        if not ips or any(not public_unicast(ip) for ip in ips):
             raise EvidenceError("non_public_address")
         return parts, port, ips[0]
     except (ValueError, OSError):
@@ -61,7 +87,23 @@ def fetch_public(url: str, profile: Profile, *, budget: Budget | None = None) ->
         conn._create_connection = lambda address, timeout=None, source_address=None: socket.create_connection(
             (ip, port), timeout, source_address
         )
+        response, timer = None, None
         try:
+            conn.connect()
+            budget.remaining()
+            connected_socket = conn.sock
+
+            def interrupt_read(sock=connected_socket):
+                # read()/header parsing can keep consuming a trickle forever
+                # despite an idle timeout. Wake blocked reads at the deadline.
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+
+            timer = threading.Timer(budget.remaining(), interrupt_read)
+            timer.daemon = True
+            timer.start()
             target = urlunsplit(("", "", parts.path or "/", parts.query, ""))
             conn.request(
                 "GET",
@@ -77,17 +119,26 @@ def fetch_public(url: str, profile: Profile, *, budget: Budget | None = None) ->
             headers = {k.lower(): v for k, v in response.getheaders()}
             body = bytearray()
             while True:
+                connected_socket.settimeout(min(10, budget.remaining()))
+                chunk = response.read1(min(65536, profile.max_bytes + 1 - len(body)))
                 budget.remaining()
-                chunk = response.read(min(65536, profile.max_bytes + 1 - len(body)))
                 if not chunk:
+                    if response.length not in (None, 0):
+                        raise EvidenceError("incomplete_live_response", retryable=True)
                     break
                 body.extend(chunk)
                 if len(body) > profile.max_bytes:
                     raise EvidenceError("response_too_large")
+                if response.isclosed():
+                    if response.length not in (None, 0):
+                        raise EvidenceError("incomplete_live_response", retryable=True)
+                    break
             if status in (301, 302, 303, 307, 308):
                 location = headers.get("location")
                 if not location:
                     raise EvidenceError("redirect_without_location")
+                if parts.scheme == "https" and urlsplit(urljoin(current, location)).scheme != "https":
+                    raise EvidenceError("https_redirect_downgrade")
                 chain.append({"url": current, "status": status, "location": urljoin(current, location)})
                 current = urljoin(current, location)
                 continue
@@ -108,8 +159,13 @@ def fetch_public(url: str, profile: Profile, *, budget: Budget | None = None) ->
                 "etag": headers.get("etag"),
             }
         except (OSError, http.client.HTTPException):
+            budget.remaining()
             raise EvidenceError("live_transport_unavailable", retryable=True) from None
         finally:
+            if timer is not None:
+                timer.cancel()
+            if response is not None:
+                response.close()
             conn.close()
     raise EvidenceError("redirect_limit")
 
@@ -269,9 +325,7 @@ def register_manifest(store: Store, profile: Profile, urls: list[str], revision:
 
 
 def verify_manifest(store: Store, profile: Profile, manifest_id: str, cache_check=False) -> dict:
-    manifest = store.get_artifact(manifest_id, "manifest")
-    if manifest["property"] != profile.site:
-        raise EvidenceError("manifest_property_mismatch")
+    manifest = store.get_artifact(manifest_id, "manifest", site=profile.site)
     deadline = time.monotonic() + profile.max_seconds
 
     def one(page):
@@ -408,6 +462,7 @@ def verify_manifest(store: Store, profile: Profile, manifest_id: str, cache_chec
     with ThreadPoolExecutor(max_workers=4) as pool:
         pages = list(pool.map(one, manifest["pages"]))
     payload = {
+        "property": profile.site,
         "manifest_id": manifest_id,
         "checked_at": now(),
         "pages": pages,

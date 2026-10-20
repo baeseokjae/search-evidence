@@ -17,6 +17,9 @@ are intentionally outside the repository.
 | Live checks | Public DNS/host restrictions, path traversal, content/schema/robots changes, soft 404, aliases |
 | Reports | HTML escaping, CSP, raw evidence in JSON |
 | Interfaces | MCP schemas/annotations, error envelopes, actual subprocess stdio, CLI/MCP parity |
+| Security boundaries | Cross-property and unscoped artifact rejection, special IP ranges, oversized MCP inputs |
+| Live deadlines | Loopback socket tests for trickled headers, bodies and chunk framing; truncated responses |
+| Dependencies | Every registry package in `uv.lock`, including platform-specific dependencies |
 
 Run the suite and lint checks from the README. CI covers Linux and macOS with
 Python 3.12/3.13. Fake transports test failure paths without consuming API quotas.

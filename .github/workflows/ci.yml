@@ -23,6 +23,25 @@ jobs:
       - run: uv run ruff format --check src tests
       - run: uv run pytest
       - run: uv build
+      - name: Audit locked dependencies
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import tomllib
+          lock = tomllib.loads(pathlib.Path("uv.lock").read_text())
+          requirements = [
+              f"{p['name']}=={p['version']}"
+              for p in lock["package"] if "registry" in p.get("source", {})
+          ]
+          (pathlib.Path(os.environ["RUNNER_TEMP"]) / "audit-requirements.txt").write_text(
+              "\n".join(requirements) + "\n"
+          )
+          PY
+          uvx pip-audit==2.10.1 --disable-pip --no-deps --strict --progress-spinner off \
+            -r "$RUNNER_TEMP/audit-requirements.txt"
       - name: Installed wheel smoke test
         shell: bash
         run: |

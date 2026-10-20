@@ -212,6 +212,7 @@ def audit_content(store: Store, profile: Profile) -> dict:
                     }
                 )
     payload = {
+        "property": profile.site,
         "created_at": now(),
         "pages": pages,
         "articles_checked": len(pages),
@@ -227,7 +228,7 @@ def audit_content(store: Store, profile: Profile) -> dict:
 
 
 def prioritize(store: Store, profile: Profile, audit_id: str) -> dict:
-    audit = store.get_artifact(audit_id, "audit")
+    audit = store.get_artifact(audit_id, "audit", site=profile.site)
     protected = store.protected(profile.site)
     pages = []
     for page in audit["pages"]:

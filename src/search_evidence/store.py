@@ -206,11 +206,18 @@ class Store:
             )
         return aid
 
-    def get_artifact(self, aid: str, kind: str) -> dict:
+    def get_artifact(self, aid: str, kind: str, *, site: str) -> dict:
         r = self.db.execute("SELECT payload FROM artifacts WHERE id=? AND kind=?", (aid, kind)).fetchone()
         if r is None:
             raise EvidenceError("artifact_not_found")
-        return json.loads(r[0])
+        payload = json.loads(r[0])
+        # IDs identify immutable evidence; knowing an ID does not grant access
+        # through a profile for another property. Old unscoped artifacts fail closed.
+        if "property" not in payload:
+            raise EvidenceError("artifact_property_unknown")
+        if payload["property"] != site:
+            raise EvidenceError("artifact_property_mismatch")
+        return payload
 
     def reserve_inspection(self, day: str, site: str, limit: int):
         # Counts attempts before the remote request; failed calls still consume the local allowance.

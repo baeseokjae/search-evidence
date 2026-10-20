@@ -192,7 +192,7 @@ class Service:
         if cursor and not audit_id:
             raise EvidenceError("audit_id_required_for_cursor")
         if audit_id:
-            data = self.store.get_artifact(audit_id, "audit")
+            data = self.store.get_artifact(audit_id, "audit", site=self.profile.site)
         else:
             data = audit_content(self.store, self.profile)
             audit_id = data["audit_id"]
@@ -213,7 +213,7 @@ class Service:
         if bool(manifest_id) == bool(verification_id) or (cursor and not verification_id):
             raise EvidenceError("select_manifest_or_existing_verification")
         if verification_id:
-            data = self.store.get_artifact(verification_id, "verification")
+            data = self.store.get_artifact(verification_id, "verification", site=self.profile.site)
         else:
             data = verify_manifest(self.store, self.profile, manifest_id, cache_check=cache_check)
             verification_id = data["verification_id"]
@@ -227,6 +227,7 @@ class Service:
 
     def render_report(self, audit_id=None, verification_id=None) -> dict:
         payload = {
+            "property": self.profile.site,
             "generated_at": now(),
             "status": self.status(),
             "protection": list(self.store.protected(self.profile.site).values()),
@@ -234,7 +235,9 @@ class Service:
         if audit_id:
             payload["priorities"] = prioritize(self.store, self.profile, audit_id)
         if verification_id:
-            payload["verification"] = self.store.get_artifact(verification_id, "verification")
+            payload["verification"] = self.store.get_artifact(
+                verification_id, "verification", site=self.profile.site
+            )
         rid = self.store.artifact("report", payload)
         directory = self.store.root / "reports" / rid
         atomic_file(directory / "report.json", canonical(payload))

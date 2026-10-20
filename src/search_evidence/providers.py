@@ -399,6 +399,7 @@ class Providers:
                     )
                 )
         payload = {
+            "property": self.profile.site,
             "job": job,
             "snapshots": results,
             "calls": self.transport.budget.calls,
@@ -462,5 +463,10 @@ class Providers:
             except EvidenceError as exc:
                 entry["bing"] = {"status": "unavailable", "indexed": None, "error": exc.code}
             results.append(entry)
-        payload = {"observed_at": now(), "results": results, "shared_provider_quota_known": False}
+        payload = {
+            "property": self.profile.site,
+            "observed_at": now(),
+            "results": results,
+            "shared_provider_quota_known": False,
+        }
         return {"inspection_id": self.store.artifact("inspection", payload), **payload}

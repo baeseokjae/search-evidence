@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 import anyio
 from mcp.server import Server
@@ -32,15 +32,16 @@ class Status(Inputs):
     remote: bool = False
 
 
+URLText = Annotated[str, Field(min_length=1, max_length=4096)]
+
+
 class Collect(Inputs):
-    start: str
-    end: str
-    sources: list[Literal["gsc", "bing"]] = ["gsc", "bing"]
-    tables: list[Literal["totals", "pages", "queries", "daily", "page_queries"]] = [
-        "totals",
-        "pages",
-        "queries",
-    ]
+    start: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$", max_length=10)
+    end: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$", max_length=10)
+    sources: list[Literal["gsc", "bing"]] = Field(default=["gsc", "bing"], min_length=1, max_length=2)
+    tables: list[Literal["totals", "pages", "queries", "daily", "page_queries"]] = Field(
+        default=["totals", "pages", "queries"], min_length=1, max_length=5
+    )
     daily: bool = True
     resume: str | None = Field(None, max_length=128)
     page_url: str | None = Field(None, max_length=4096)
@@ -59,7 +60,7 @@ class Compare(Page):
 
 
 class Protect(Page):
-    urls: list[str] | None = Field(None, max_length=2000)
+    urls: list[URLText] | None = Field(None, max_length=2000)
 
 
 class Prioritize(Page):
@@ -71,7 +72,7 @@ class Audit(Page):
 
 
 class Inspect(Inputs):
-    urls: list[str] = Field(min_length=1, max_length=100)
+    urls: list[URLText] = Field(min_length=1, max_length=100)
 
 
 class Verify(Page):

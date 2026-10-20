@@ -44,6 +44,9 @@ file lock automatically.
 
 `artifacts` stores manifests, verification results, audits, collections and report
 descriptions. MCP accepts registered artifact IDs rather than arbitrary paths.
+Artifact reads validate the stored property against the active profile. Unscoped
+legacy audits and verification results must be regenerated; existing raw data and
+URL protection records are retained.
 `quota` reserves local Google inspection attempts transactionally.
 
 Backups use SQLite's online backup API to obtain a consistent view while WAL is
@@ -66,8 +69,10 @@ space), epoch and offset. The display label is not used to claim a verified
 reporting timezone or a seven-day interval.
 
 The public fetcher validates all DNS answers, pins an approved address, retains
-TLS hostname validation, rechecks redirects, limits bytes, and bounds per-page
-and batch duration. It never sends search-provider credentials.
+TLS hostname validation, rechecks redirects, limits bytes, and shuts down live
+socket reads at the per-page deadline. It rejects special network addresses and
+HTTPS downgrades. The batch stops starting requests after its deadline; operating
+system DNS resolution can still overrun it. It never sends search-provider credentials.
 
 ## Review order
 
